@@ -6,19 +6,12 @@
     </Plugin>
   </Plugins>
   <VirtualDirectory Name="ressources">
-    <File Name="assets/t-rex-runner-bot.gif"/>
-    <File Name="assets/t-rex-runner-19janil.gif"/>
-    <File Name="assets/screenshot.gif"/>
-    <File Name="assets/offline-sprite-2x.png"/>
-    <File Name="assets/offline-sprite-1x.png"/>
-    <File Name="assets/novas-coisas.gif"/>
-    <File Name="assets/kumamon-runner.gif"/>
-    <File Name="assets/hello-kugou.gif"/>
+    <File Name="assets/spritemap2.png"/>
+    <File Name="assets/spritemap2.bmp"/>
   </VirtualDirectory>
   <Description/>
   <Dependencies/>
   <VirtualDirectory Name="src">
-    <File Name="ai.h"/>
     <VirtualDirectory Name="allegro">
       <File Name="allegro/sprites.h"/>
       <VirtualDirectory Name="fonts">
@@ -40,10 +33,10 @@
   <Dependencies Name="Release"/>
   <Settings Type="Executable">
     <GlobalSettings>
-      <Compiler Options="-std=c++14" C_Options="" Assembler="">
+      <Compiler Options="-fopenmp;-std=c++14" C_Options="" Assembler="">
         <IncludePath Value="."/>
       </Compiler>
-      <Linker Options="-Wl,--format=binary -Wl,allegro/fonts/Arimo-Regular.ttf -Wl,--format=default">
+      <Linker Options="-fopenmp;-Wl,--format=binary -Wl,allegro/fonts/Arimo-Regular.ttf -Wl,--format=default">
         <LibraryPath Value="."/>
         <Library Value="allegro"/>
         <Library Value="allegro_ttf"/>

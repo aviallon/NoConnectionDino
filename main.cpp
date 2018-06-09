@@ -6,9 +6,10 @@
 #include <chrono>
 #include <string>
 #include <cstdio>
+#include <utility>
 #include "allegro/allegro.h"
 
-#define N_DINOS 30
+#define N_DINOS 3
 
 using namespace std;
 
@@ -100,7 +101,7 @@ public:
 		this->c = c_anc;
 		this->mort = false;
 		t0 = chrono::system_clock::now();
-		cout << "New dino : " << a_anc << ", " << b_anc << ", " << c_anc << endl;
+		
 	}
 	
 	void draw(int screen_height = 0){
@@ -140,6 +141,21 @@ public:
 		
 	}
 	
+    static bool compare(Dino& a, Dino &b){
+        return (a.score < b.score);
+    }
+    
+    static bool compare_desc(Dino& a, Dino &b){
+        return (a.score > b.score);
+    }
+    
+    static bool compare_desc_alive(Dino& a, Dino &b){
+        if(a.mort)
+            return false;
+        if(b.mort)
+            return true;
+        return (a.score > b.score);
+    }
 };
 
 class World{
@@ -160,6 +176,8 @@ public:
 	int generation = 0;
 	vector<vector<float*> > entrees;
 	vector<bool> dinos_morts;
+    
+    vector<int> generation_high_scores;
 	
 	World(){
 		
@@ -172,32 +190,18 @@ public:
 	}
 	
 	void reset(){
-		
+        
 		/******************* ALGORITHME GENETIQUE ***********************/
 		
 		
 		/* On sélectionne les 2 meilleurs Dinos et on les "accouple" */
-		vector<Dino> meilleurs;
-		int max = 0;
-		unsigned i_max = 0;
-		for(unsigned i=0; i<dinos.size(); i++){
-			if(dinos[i].score > max && !dinos[i].mort){
-				max = dinos[i].score;
-				i_max = i;
-				cout << max << endl;
-			}
-		}
-		meilleurs.push_back(dinos[i_max]);
+        vector<Dino> meilleurs;
+        sort(dinos.begin(), dinos.end(), Dino::compare_desc);
+        
+        generation_high_scores.push_back(dinos[0].score);
 		
-		for(unsigned i=0; i<dinos.size(); i++){
-			if(i == i_max)
-				continue;
-			if(dinos[i].score > max && !dinos[i].mort){
-				max = dinos[i].score;
-				i_max = i;
-			}
-		}
-		meilleurs.push_back(dinos[i_max]);
+        meilleurs.push_back(dinos[0]);
+		meilleurs.push_back(dinos[1]);
 		
 		// On récupère les poids d'entréé des deux meilleurs Dinos
 		
@@ -210,11 +214,14 @@ public:
 		float c2 = meilleurs[1].c;
 		
 		dinos.clear();
+        dinos = vector<Dino>(N_DINOS, Dino(0));
 		
 		// On réinitialise les Dinos et on créee les nouveaux à partir des 2 meilleurs précédemment choisis
 		const float p_cross_over = 0.5;
 		const float p_mutation_importante = 10e-2;
 		
+       // #pragma omp for ordered schedule(dynamic)
+        #pragma omp parallel for
 		for(unsigned i=0; i<N_DINOS; i++){
 			float r = random(0, 1);
 			float r2 = random(0, 1);
@@ -250,7 +257,12 @@ public:
 				c = random(-2, 2);
 			}
 			
-			dinos.push_back(Dino(5*16, a, b, c));
+            stringstream ss;
+            ss << "Dino (" << i << ") : " << a << ", " << b << ", " << c << endl;
+            //cout << ss.str();
+            
+           // #pragma omp ordered
+            dinos[i] = Dino(5*16, a, b, c);
 		}
 
 		// Reset du monde
@@ -320,7 +332,7 @@ public:
 		score+=speed;
 		if(new_wave <= 0){
 			spawnCactus();
-			new_wave = 200+int(random(-20, 20));
+			new_wave = 200+int(random(-80, 10));
 		}
 		new_wave -= speed;
 		
@@ -336,41 +348,40 @@ public:
 		decalage_sol = (decalage_sol - 2*speed);
 		
 		
-		int dino_max = 0;
-		int dino = 0;
-		for(unsigned d; d<dinos.size(); d++){
-			if(dinos[d].score > dino_max && !dinos[d].mort){
-				dino_max = dinos[d].score;
-				dino = d;
-			}
-		}
+        /* Gets nearest cactus */
+        
+        vector<Dino> _dinos = dinos;
+        sort(_dinos.begin(), _dinos.end(), Dino::compare_desc_alive);
 		
 		int cactus_min = 1000;
 		int c_min = 0;
 		for(unsigned c=0; c<cactuses.size(); c++){
-			if(cactuses[c].x >= dinos[dino].x && cactus_min > cactuses[c].x){
+			if(cactuses[c].x >= _dinos[0].x && cactus_min > cactuses[c].x){
 				cactus_min = cactuses[c].x;
 				c_min = c;
 			}
 		}
 		
+        //#pragma omp for ordered schedule(dynamic)
 		for(unsigned d=0; d<dinos.size(); d++){
 			
-			dinos[d].AI(cactus_min, cactuses[c_min].h);
-			// Sortie de l'IA
-			
-			
-			//cout << "Saut (" << d << ") : " << dinos[d].launch_saut << ", (" << dinos[d].a << ";" << dinos[d].b << ")" << endl;
-			
-			dinos[d].act(speed);
-			if(!dinos[d].mort){
+            if(!dinos[d].mort){
+                
+                dinos[d].AI(cactus_min, cactuses[c_min].h);
+                // Sortie de l'IA
+                
+                
 				if(dinoMeurt(dinos[d])){
 					dinos[d].mort = true;
 					dinos[d].score = score;
+                    
+                    //#pragma omp ordered
 					morts++;
-					//cout << "Dino n°" << d << " est MORT!" << endl;
+                    //cout << "\t" << "Morts : " << morts << endl;
 				}
 			}
+			
+            dinos[d].act(speed);
 		}
 		
 		speed = floor(score / 1500) + 1;
@@ -443,14 +454,79 @@ void onKeyDown(Allegro* allegro, void* context, uint16_t event, uint8_t keycode)
 //	}
 }
 
+pair<int, int> pointToPixel(Allegro* allegro, float xmax, float ymax, pair<float, float> point, pair<int, int> topLeft, pair<int, int> bottomRight){
+    
+    int largeur = bottomRight.first - topLeft.first;
+    int hauteur = bottomRight.second - topLeft.second;
+    
+    pair<int, int> res;
+    res.first = point.first*largeur/xmax + topLeft.first;
+    res.second = hauteur-point.second*hauteur/ymax + topLeft.second;
+    
+    return res;
+}
+
+void grapheRedraw(Allegro* allegro, float fps){
+    allegro->clearScreen();
+    
+    World* world = (World*)(allegro->getContext());
+    vector<int>* hscores = &(world->generation_high_scores);
+    
+    int largeur = allegro->getDisplayWidth();
+    int hauteur = allegro->getDisplayHeight();
+    
+    //float percent = max(float(world->score)/40000, 0.0f);
+    
+    pair<int, int> topLeft(10, 10);
+    pair<int, int> bottomRight(largeur-10, hauteur-10);
+    allegro->draw_rectangle(topLeft.first, topLeft.second, bottomRight.first, bottomRight.second, Color(0, 0, 0).toAllegro(), 1, false);
+    
+    vector<int>::iterator max_score = max_element(hscores->begin(), hscores->end());
+    float xmax = max(10, int(hscores->size()));
+    float ymax = 5000;
+    pair<int, int> prev_pix;
+    if(hscores->size() > 0){
+        ymax = max(5000, hscores->at(distance(hscores->begin(), max_score)));
+    }
+    
+    for(unsigned i=0; i<hscores->size(); i++){
+        //cout << hscores->at(i) << endl;
+        pair<int, int> pix = pointToPixel(allegro, xmax, ymax, pair<float, float>(i, hscores->at(i)), topLeft, bottomRight);
+        Color couleur = colorWheel(i, hscores->size());
+        
+        allegro->draw_rectangle(pix.first-2, pix.second-2, pix.first+2, pix.second+2, couleur.toAllegro(), 1, true);
+        
+        if(i!=0)
+            allegro->draw_line(prev_pix.first, prev_pix.second, pix.first, pix.second);
+    
+        stringstream ss;
+        ss << i;
+        allegro->draw_text(pix.first, pix.second-15, ss.str(), couleur.toAllegro(), ALLEGRO_ALIGN_CENTRE);
+        
+        prev_pix = pix;
+    }
+    
+    stringstream maxscore;
+    maxscore << ymax;
+    allegro->draw_text(topLeft.first, topLeft.second, maxscore.str(), Color(0, 0, 255).toAllegro(), ALLEGRO_ALIGN_LEFT);
+    
+    //allegro->draw_rectangle(20, largeur/2+20, (longueur-40)+20, largeur/2-20, Color(0, 0, 0).toAllegro(), 2, false);
+    //allegro->draw_rectangle(20, largeur/2+20, round((longueur-40)*percent)-20, largeur/2+20, Color(0, 0, 0).toAllegro(), 1, true);
+}
+
 int main(int argc, char **argv)
 {
-	Allegro allegro;
+    Allegro::init();
+	Allegro jeu, graphe;
 	World world;
 	world.longueur = 500;
-	allegro.init();
-	allegro.createWindow(60, world.longueur, 300);
-	allegro.setContext(&world);
+	jeu.createWindow(60, world.longueur, 300);
+	jeu.setContext(&world);
+    
+    graphe.createWindow(60, 400, 300);
+    graphe.setContext(&world);
+    
+    graphe.setRedrawFunction(&grapheRedraw);
 	
 	spritemap = SpriteMap("assets/spritemap2.png");
 	
@@ -468,9 +544,9 @@ int main(int argc, char **argv)
 	
 	reload_sprite = spritemap.getSprite(2, 2, 37-2, 33-2);
 	
-	allegro.setRedrawFunction(&redraw);
-	allegro.setAnimateFunction(&animate);
-	allegro.bindKeyDown(&onKeyDown);
+	jeu.setRedrawFunction(&redraw);
+	jeu.setAnimateFunction(&animate);
+	jeu.bindKeyDown(&onKeyDown);
 	
-	allegro.gameLoop();
+	Allegro::startLoop();
 }
