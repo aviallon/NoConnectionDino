@@ -9,13 +9,16 @@
 #include <utility>
 #include "allegro/allegro.h"
 
-#define N_DINOS 3
+#define N_DINOS 6
 
 using namespace std;
 
 SpriteMap spritemap;
 vector<Sprite> cactus_sprites;
-vector<Sprite> dino_sprites;
+vector<Sprite> dino_sprites_run;
+vector<Sprite> dino_sprites_bent;
+Sprite dino_sprite_dead;
+Sprite dino_sprite_jump;
 vector<Sprite> ground_sprites;
 Sprite reload_sprite;
 
@@ -77,6 +80,7 @@ public:
 	int h = 46;
 	int nsprite = 0;
 	bool saut = false;
+    bool bent = false;
 	float t_saut = 0;
 	bool mort = false;
 	int score = 0;
@@ -105,7 +109,14 @@ public:
 	}
 	
 	void draw(int screen_height = 0){
-		dino_sprites[nsprite].drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
+        if(mort)
+            dino_sprite_dead.drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
+        else if(saut)
+            dino_sprite_jump.drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
+        else if(bent)
+            dino_sprites_bent[nsprite].drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
+		else
+            dino_sprites_run[nsprite].drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
 	}
 	
 	void AI(int p_obst, int h_obst){
@@ -120,7 +131,6 @@ public:
 		if(saut){
 			t_saut+=speed;
 			y = int(hsaut(t_saut));
-			nsprite = 2;
 		} else {
 			chrono::duration<float, std::milli> dt = chrono::system_clock::now() - t0;
 			if(dt.count() > 100){
@@ -442,9 +452,27 @@ void animate(Allegro* allegro, float FPS){
 		world->reset();
 }
 
+chrono::system_clock::time_point temps_appui_reset;
+bool disableReset = false;
 void onKeyDown(Allegro* allegro, void* context, uint16_t event, uint8_t keycode){
-	/*World* world = (World*)context;
-	vector<Dino>* dinos = &(world->dinos);
+	World* world = (World*)context;
+    
+    if(event == Allegro::KEY_DOWN){
+        if(keycode == ALLEGRO_KEY_R){
+            temps_appui_reset = chrono::system_clock::now();
+        }
+    } else if(event == Allegro::KEY_UP){
+        if(keycode == ALLEGRO_KEY_R){
+            disableReset = false;
+        }
+    }
+    
+    chrono::duration<float, std::milli> dt = chrono::system_clock::now() - temps_appui_reset;
+    if(allegro->isKeyDown(ALLEGRO_KEY_R) && dt.count() > 200 && !disableReset){
+        world->reset();
+        disableReset = true;
+    }
+	/*vector<Dino>* dinos = &(world->dinos);
 	Dino* dino = &(dinos->at(0));
 	if(keycode == ALLEGRO_KEY_SPACE && !dino->saut && dino->y == 0){
 		dino->saut = true;
@@ -534,9 +562,11 @@ int main(int argc, char **argv)
 		cactus_sprites.push_back(spritemap.getSprite(228+i*(245-228), 0, 245-228, 36));
 	}
 	for(unsigned i=2; i<=3; i++){
-		dino_sprites.push_back(spritemap.getSprite(678+i*(720-677+1), 2, 720-677, 48-2));
+		dino_sprites_run.push_back(spritemap.getSprite(678+i*(720-677+1), 2, 720-677, 48-2));
 	}
-	dino_sprites.push_back(spritemap.getSprite(678, 2, 720-677, 48-2)); // jump dino
+	dino_sprite_jump = spritemap.getSprite(678, 2, 720-677, 48-2); // jump dino
+    
+    dino_sprite_dead = spritemap.getSprite(853, 2, 720-677, 48-2); // dead dino
 	
 	for(unsigned i=0; i<74; i++){
 		ground_sprites.push_back(spritemap.getSprite(2+i*(17-2+1), 54, 17-2, 67-54));
