@@ -18,6 +18,7 @@
   <Description/>
   <Dependencies/>
   <VirtualDirectory Name="src">
+<<<<<<< HEAD
     <File Name="ai.h"/>
     <VirtualDirectory Name="allegro">
       <File Name="allegro/sprites.h"/>
@@ -29,6 +30,13 @@
       </VirtualDirectory>
       <File Name="allegro/mouse.h"/>
       <File Name="allegro/mouse.cpp"/>
+=======
+    <VirtualDirectory Name="allegro">
+      <File Name="allegro/sprites.h"/>
+      <File Name="allegro/mouse.h"/>
+      <File Name="allegro/mouse.cpp"/>
+      <File Name="allegro/main.cpp"/>
+>>>>>>> f351ea98aeafb58c036c8fb86d579a4dc8300967
       <File Name="allegro/gui.h"/>
       <File Name="allegro/gui.cpp"/>
       <File Name="allegro/allegro.h"/>
