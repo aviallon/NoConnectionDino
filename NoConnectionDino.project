@@ -8,6 +8,16 @@
   <Description/>
   <Dependencies/>
   <VirtualDirectory Name="src">
+    <VirtualDirectory Name="allegro">
+      <File Name="allegro/sprites.h"/>
+      <File Name="allegro/mouse.h"/>
+      <File Name="allegro/mouse.cpp"/>
+      <File Name="allegro/main.cpp"/>
+      <File Name="allegro/gui.h"/>
+      <File Name="allegro/gui.cpp"/>
+      <File Name="allegro/allegro.h"/>
+      <File Name="allegro/allegro.cpp"/>
+    </VirtualDirectory>
     <File Name="main.cpp"/>
   </VirtualDirectory>
   <Settings Type="Executable">
