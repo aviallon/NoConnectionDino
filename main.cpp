@@ -9,12 +9,13 @@
 #include <utility>
 #include "allegro/allegro.h"
 
-#define N_DINOS 6
+#define N_DINOS 35
 
 using namespace std;
 
 SpriteMap spritemap;
 vector<Sprite> cactus_sprites;
+vector<Sprite> bird_sprites;
 vector<Sprite> dino_sprites_run;
 vector<Sprite> dino_sprites_bent;
 Sprite dino_sprite_dead;
@@ -40,10 +41,15 @@ public:
 	int y;
 	int L = 17;
 	int nsprite = 0;
+    vector<Sprite>* sprites;
 	
 	bool pointInside(float xp, float yp){
 		return ( ( x <= xp && xp <= x+L) && (y <= yp && yp <= y+h) );
 	}
+    
+    void draw(int screen_height = 0){
+        sprites->at(nsprite).drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
+    }
 };
 
 class Cactus : public Obstacle{
@@ -53,20 +59,19 @@ public:
 		this->h = h;
 		this->x = x;
 		this->y = 0;
+        this->sprites = &cactus_sprites;
 		this->nsprite = round(random(0, cactus_sprites.size()-1));
-	}
-	
-	void draw(int screen_height = 0){
-		cactus_sprites[nsprite].drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
 	}
 };
 
 class Oiseau : public Obstacle{
 public:
-	Oiseau(float h, float x, float y){
-		this->h = h;
+	Oiseau(float x, float y){
+		this->h = 33;
+        this->L = 42;
 		this->x = x;
 		this->y = y;
+        this->sprites = &bird_sprites;
 	}
 };
 
@@ -83,6 +88,7 @@ public:
     bool bent = false;
 	float t_saut = 0;
 	bool mort = false;
+    bool alwaysjump = true;
 	int score = 0;
 	chrono::system_clock::time_point t0;
 	
@@ -122,8 +128,12 @@ public:
 	void AI(int p_obst, int h_obst){
 		
 		launch_saut = a*float(p_obst-x)/(2*L) + b*float(h_obst)/float(h);
-		if(launch_saut < c)
+		if(launch_saut < c){
 			saut = true;
+        } else {
+            if(!saut)
+                alwaysjump = false;
+        }
 	}
 	
 	void act(float& speed){
@@ -166,11 +176,25 @@ public:
             return true;
         return (a.score > b.score);
     }
+    
+    /**
+     * @brief Discriminates Dinos based on their best score and class as lowest Dinos which always jump
+     * @param a First Dino
+     * @param b Second Dino
+     * @return Returns true if the first Dino is better than the second one
+     */
+    static bool compare_desc_noalwaysjump(Dino& a, Dino &b){
+        if(a.alwaysjump)
+            return false;
+        if(b.alwaysjump)
+            return true;
+        return (a.score > b.score);
+    }
 };
 
 class World{
 public:
-	vector<Cactus> cactuses;
+	vector<Obstacle> obstacles;
 	vector<Dino> dinos;
 	int longueur;
 	int h_sol = 2;
@@ -206,7 +230,7 @@ public:
 		
 		/* On sélectionne les 2 meilleurs Dinos et on les "accouple" */
         vector<Dino> meilleurs;
-        sort(dinos.begin(), dinos.end(), Dino::compare_desc);
+        sort(dinos.begin(), dinos.end(), Dino::compare_desc_noalwaysjump);
         
         generation_high_scores.push_back(dinos[0].score);
 		
@@ -282,7 +306,7 @@ public:
 		new_wave = 0;
 		speed = 1;
 		generation++;
-		cactuses.clear();
+		obstacles.clear();
 	}
 	
 	/*void saveHighScore(){
@@ -305,33 +329,36 @@ public:
 	}*/
 	
 	// Génère des cactus selon des patterns prédéfinis.
-	void spawnCactus(){
+	void spawnObstacles(){
 		int r = round(random(0, 3));
 		//cout << "R = " << r << endl;
 		switch(r){
 			case 0:
-				cactuses.push_back(Cactus(20, longueur));
-				cactuses.push_back(Cactus(30, longueur+32));
-				cactuses.push_back(Cactus(20, longueur+32*2));
+				obstacles.push_back(Cactus(20, longueur));
+				obstacles.push_back(Cactus(30, longueur+32));
+				obstacles.push_back(Cactus(20, longueur+32*2));
 				break;
 			case 1:
-				cactuses.push_back(Cactus(50, longueur));
+				obstacles.push_back(Cactus(50, longueur));
 				break;
 			case 2:
-				cactuses.push_back(Cactus(50, longueur));
-				cactuses.push_back(Cactus(20, longueur+32));
+				obstacles.push_back(Cactus(50, longueur));
+				obstacles.push_back(Cactus(20, longueur+32));
 				break;
 			case 3:
-				cactuses.push_back(Cactus(35, longueur));
-				cactuses.push_back(Cactus(35, longueur+32));
+				obstacles.push_back(Cactus(35, longueur));
+				obstacles.push_back(Cactus(35, longueur+32));
 				break;
+            case 4:
+                obstacles.push_back(Oiseau(longueur, 35));
+                break;
 			default:
 				cerr << "Bug de generation !" << endl;
 		}
 	}
 	
 	bool dinoMeurt(Dino dino){
-		for(Cactus &c: cactuses){
+		for(Obstacle &c: obstacles){
 			if(c.pointInside(dino.x+dino.jambe_gauche+dino.wbas, dino.y) || c.pointInside(dino.x+dino.jambe_gauche, dino.y) || c.pointInside(dino.x+dino.L, dino.y+dino.h))
 				return true;
 		}
@@ -341,17 +368,17 @@ public:
 	void iteration(){
 		score+=speed;
 		if(new_wave <= 0){
-			spawnCactus();
+			spawnObstacles();
 			new_wave = 200+int(random(-80, 10));
 		}
 		new_wave -= speed;
 		
-		for(unsigned c=0; c < cactuses.size(); c++){
+		for(unsigned c=0; c < obstacles.size(); c++){
 			
-			cactuses[c].x-=2*speed;
+			obstacles[c].x-=2*speed;
 			
-			if((cactuses[c].x + cactuses[c].L) < 0){
-				cactuses.erase(cactuses.begin()+c);
+			if((obstacles[c].x + obstacles[c].L) < 0){
+				obstacles.erase(obstacles.begin()+c);
 			}
 		}
 		
@@ -363,11 +390,11 @@ public:
         vector<Dino> _dinos = dinos;
         sort(_dinos.begin(), _dinos.end(), Dino::compare_desc_alive);
 		
-		int cactus_min = 1000;
+		int obstacle_min = 1000;
 		int c_min = 0;
-		for(unsigned c=0; c<cactuses.size(); c++){
-			if(cactuses[c].x >= _dinos[0].x && cactus_min > cactuses[c].x){
-				cactus_min = cactuses[c].x;
+		for(unsigned c=0; c<obstacles.size(); c++){
+			if(obstacles[c].x >= _dinos[0].x && obstacle_min > obstacles[c].x){
+				obstacle_min = obstacles[c].x;
 				c_min = c;
 			}
 		}
@@ -377,7 +404,7 @@ public:
 			
             if(!dinos[d].mort){
                 
-                dinos[d].AI(cactus_min, cactuses[c_min].h);
+                dinos[d].AI(obstacle_min, obstacles[c_min].h);
                 // Sortie de l'IA
                 
                 
@@ -411,7 +438,7 @@ void redraw(Allegro* allegro, float FPS){
 		ground_sprites[(i-(world->decalage_sol/world->L_sol))%ground_sprites.size()].drawSprite(i*world->L_sol+(world->decalage_sol)%world->L_sol, hauteur-(67-54));
 	}
 	
-	for(Cactus &c: world->cactuses){
+	for(Obstacle &c: world->obstacles){
 		c.draw(hauteur-world->h_sol);
 	}
 	
@@ -514,8 +541,9 @@ void grapheRedraw(Allegro* allegro, float fps){
     float ymax = 5000;
     pair<int, int> prev_pix;
     if(hscores->size() > 0){
-        ymax = max(5000, hscores->at(distance(hscores->begin(), max_score)));
+        ymax = max(ymax, float(hscores->at(distance(hscores->begin(), max_score))));
     }
+    ymax = max(ymax, float(world->score));
     
     for(unsigned i=0; i<hscores->size(); i++){
         //cout << hscores->at(i) << endl;
@@ -533,6 +561,13 @@ void grapheRedraw(Allegro* allegro, float fps){
         
         prev_pix = pix;
     }
+    
+    pair<int, int> pix = pointToPixel(allegro, xmax, ymax, pair<float, float>(world->generation, world->score), topLeft, bottomRight);
+    Color couleur = colorWheel(world->generation, hscores->size());
+    
+    allegro->draw_ellipse(pix.first-3, pix.second-3, pix.first+3, pix.second+3, couleur.toAllegro(), 1, false);
+    //allegro->draw_rectangle(pix.first-2, pix.second-2, pix.first+2, pix.second+2, couleur.toAllegro(), 1, true);
+        
     
     stringstream maxscore;
     maxscore << ymax;
@@ -560,6 +595,9 @@ int main(int argc, char **argv)
 	
 	for(unsigned i=0; i<6; i++){
 		cactus_sprites.push_back(spritemap.getSprite(228+i*(245-228), 0, 245-228, 36));
+	}
+    for(unsigned i=0; i<1; i++){
+		bird_sprites.push_back(spritemap.getSprite(134+i*(179-134), 2, 179-134, 41-2));
 	}
 	for(unsigned i=2; i<=3; i++){
 		dino_sprites_run.push_back(spritemap.getSprite(678+i*(720-677+1), 2, 720-677, 48-2));
