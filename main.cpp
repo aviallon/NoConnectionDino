@@ -7,9 +7,11 @@
 #include <string>
 #include <cstdio>
 #include <utility>
+#include <thread>
 #include "allegro/allegro.h"
 
-#define N_DINOS 35
+#define N_DINOS 70
+#define CDEF (random(-3, 3))
 
 using namespace std;
 
@@ -92,9 +94,10 @@ public:
 	int score = 0;
 	chrono::system_clock::time_point t0;
 	
-	float a; // Coeff distance
-	float b; // Coeff hauteur
-	float c; // Coeff seuil
+	vector<float> coeffs; // Coefficients utilisés pour l'IA\
+	0 -> coeff position cactus\
+	1 -> coeff hauteur cactus\
+	2 -> coeff seuil
 	
 	float launch_saut = 0;
 	
@@ -104,11 +107,9 @@ public:
 		return -4*h*t*t/(l*l) + 4*h*t/l;
 	}
 	
-	Dino(int x = 0, float a_anc = 1, float b_anc = 0.5, float c_anc = 0){
+	Dino(int x, vector<float> coeffs){
 		this->x = x;
-		this->a = a_anc;
-		this->b = b_anc;
-		this->c = c_anc;
+		this->coeffs = coeffs;
 		this->mort = false;
 		t0 = chrono::system_clock::now();
 		
@@ -125,15 +126,22 @@ public:
             dino_sprites_run[nsprite].drawSprite(this->x, screen_height-(this->y+this->h), this->L, this->h);
 	}
 	
+	
+	/**
+	 * @brief The Neural-network is used to decide which action to do based on the given ouptuts
+	 * @param p_obst
+	 * @param h_obst
+	 */
 	void AI(int p_obst, int h_obst){
 		
-		launch_saut = a*float(p_obst-x)/(2*L) + b*float(h_obst)/float(h);
-		if(launch_saut < c){
+		launch_saut = coeffs[0]*float(p_obst)/float(L) + coeffs[1]*float(h_obst)/float(h);
+		if(launch_saut > coeffs[2]){
 			saut = true;
         } else {
             if(!saut)
                 alwaysjump = false;
         }
+		
 	}
 	
 	void act(float& speed){
@@ -190,6 +198,10 @@ public:
             return true;
         return (a.score > b.score);
     }
+	
+	static bool is_dead(Dino& d){
+		return d.mort;
+	}
 };
 
 class World{
@@ -216,8 +228,13 @@ public:
 	World(){
 		
 		for(unsigned i=0; i<N_DINOS; i++){
-			dinos.push_back(Dino(5*16, random(-2, 2), random(-2, 2), random(-2, 2)));
+			vector<float> coeffs;
+			for(unsigned j = 0; j<3; j++){
+				coeffs.push_back(CDEF);
+			}
+			dinos.push_back(Dino(5*16, coeffs));
 		}
+		
 		morts = 0;
 		
 		t0 = chrono::system_clock::now();
@@ -229,74 +246,46 @@ public:
 		
 		
 		/* On sélectionne les 2 meilleurs Dinos et on les "accouple" */
-        vector<Dino> meilleurs;
         sort(dinos.begin(), dinos.end(), Dino::compare_desc_noalwaysjump);
         
         generation_high_scores.push_back(dinos[0].score);
 		
-        meilleurs.push_back(dinos[0]);
-		meilleurs.push_back(dinos[1]);
-		
 		// On récupère les poids d'entréé des deux meilleurs Dinos
 		
-		float a1 = meilleurs[0].a;
-		float b1 = meilleurs[0].b;
-		float a2 = meilleurs[1].a;
-		float b2 = meilleurs[1].b;
+		vector<vector<float> > coeffs_dinos(2);
 		
-		float c1 = meilleurs[0].c;
-		float c2 = meilleurs[1].c;
+		coeffs_dinos[0] = dinos[0].coeffs;
+		coeffs_dinos[1] = dinos[1].coeffs;
 		
 		dinos.clear();
-        dinos = vector<Dino>(N_DINOS, Dino(0));
+        dinos = vector<Dino>(N_DINOS, Dino(0, vector<float>(3, 0)));
 		
 		// On réinitialise les Dinos et on créee les nouveaux à partir des 2 meilleurs précédemment choisis
-		const float p_cross_over = 0.5;
+		const float p_cross_over = 0.2;
 		const float p_mutation_importante = 10e-2;
+		const float taux_mutation = 0.08;
 		
        // #pragma omp for ordered schedule(dynamic)
         #pragma omp parallel for
 		for(unsigned i=0; i<N_DINOS; i++){
-			float r = random(0, 1);
-			float r2 = random(0, 1);
-			float a, b, c;
 			
-			// Cross Overs
-			if(r > p_cross_over)
-				a = a1;
-			else
-				a = a2;
-			if(r2 > p_cross_over)
-				b = b1;
-			else
-				b = b2;
-			if(random(0, 1) > p_cross_over)
-				c = c1;
-			else
-				c = c2;
-			
-			
-			// Mutations
-			a = a + random(-0.04, 0.04);
-			b = b + random(-0.04, 0.04);
-			c = c + random(-0.04, 0.04);
-			
-			if(random(0, 1) < p_mutation_importante){
-				a = random(-2, 2);
-			}
-			if(random(0, 1) < p_mutation_importante){
-				b = random(-2, 2);
-			}
-			if(random(0, 1) < p_mutation_importante){
-				c = random(-2, 2);
+			vector<float> this_dino_coeffs = coeffs_dinos[0];
+			for(unsigned c=0; c<coeffs_dinos[0].size(); c++){
+				if(random(0, 1) > 1-p_cross_over)
+					this_dino_coeffs[c] = coeffs_dinos[1][c];
+					
+				this_dino_coeffs[c] += random(-taux_mutation/2, taux_mutation/2);
+				
+				if(random(0, 1) > p_mutation_importante)
+					this_dino_coeffs[c] = CDEF;
 			}
 			
-            stringstream ss;
-            ss << "Dino (" << i << ") : " << a << ", " << b << ", " << c << endl;
+            //stringstream ss;
+            //ss << "Dino (" << i << ") : " << a << ", " << b << ", " << c << endl;
             //cout << ss.str();
             
            // #pragma omp ordered
-            dinos[i] = Dino(5*16, a, b, c);
+            dinos[i] = Dino(5*16, this_dino_coeffs);
 		}
 
 		// Reset du monde
@@ -366,7 +355,9 @@ public:
 	}
 	
 	void iteration(){
-		score+=speed;
+		//morts = std::count_if(dinos.begin(), dinos.end(), Dino::is_dead);
+		
+		score += speed;
 		if(new_wave <= 0){
 			spawnObstacles();
 			new_wave = 200+int(random(-80, 10));
@@ -422,6 +413,10 @@ public:
 		}
 		
 		speed = floor(score / 1500) + 1;
+		
+		if(morts >= dinos.size()){
+			reset();
+		}
 	}
 };
 
@@ -473,22 +468,21 @@ void redraw(Allegro* allegro, float FPS){
 
 void animate(Allegro* allegro, float FPS){
 	World* world = (World*)(allegro->getContext());
-	if(world->morts < world->dinos.size())
-		world->iteration();
-	else
-		world->reset();
+	world->iteration();
 }
 
 chrono::system_clock::time_point temps_appui_reset;
 bool disableReset = false;
-void onKeyDown(Allegro* allegro, void* context, uint16_t event, uint8_t keycode){
+
+void onKey(Allegro* allegro, void* context, uint16_t event, uint8_t keycode){
 	World* world = (World*)context;
     
-    if(event == Allegro::KEY_DOWN){
+    if(event & Allegro::KEY_DOWN){
         if(keycode == ALLEGRO_KEY_R){
             temps_appui_reset = chrono::system_clock::now();
         }
-    } else if(event == Allegro::KEY_UP){
+    }
+	if(event & Allegro::KEY_UP){
         if(keycode == ALLEGRO_KEY_R){
             disableReset = false;
         }
@@ -497,6 +491,9 @@ void onKeyDown(Allegro* allegro, void* context, uint16_t event, uint8_t keycode)
     chrono::duration<float, std::milli> dt = chrono::system_clock::now() - temps_appui_reset;
     if(allegro->isKeyDown(ALLEGRO_KEY_R) && dt.count() > 200 && !disableReset){
         world->reset();
+		allegro->setRedrawFunction(&Allegro::_undefined_);
+		this_thread::sleep_for(chrono::milliseconds(200));
+		allegro->setRedrawFunction(&redraw);
         disableReset = true;
     }
 	/*vector<Dino>* dinos = &(world->dinos);
@@ -564,6 +561,10 @@ void grapheRedraw(Allegro* allegro, float fps){
     
     pair<int, int> pix = pointToPixel(allegro, xmax, ymax, pair<float, float>(world->generation, world->score), topLeft, bottomRight);
     Color couleur = colorWheel(world->generation, hscores->size());
+	
+	if(hscores->size() > 0){
+		allegro->draw_line(prev_pix.first, prev_pix.second, pix.first, pix.second, Color(150, 150, 150).toAllegro(), 1);
+	}
     
     allegro->draw_ellipse(pix.first-3, pix.second-3, pix.first+3, pix.second+3, couleur.toAllegro(), 1, false);
     //allegro->draw_rectangle(pix.first-2, pix.second-2, pix.first+2, pix.second+2, couleur.toAllegro(), 1, true);
@@ -583,10 +584,10 @@ int main(int argc, char **argv)
 	Allegro jeu, graphe;
 	World world;
 	world.longueur = 500;
-	jeu.createWindow(60, world.longueur, 300);
+	jeu.createWindow(120, world.longueur, 300);
 	jeu.setContext(&world);
     
-    graphe.createWindow(60, 400, 300);
+    graphe.createWindow(15, 400, 300);
     graphe.setContext(&world);
     
     graphe.setRedrawFunction(&grapheRedraw);
@@ -614,7 +615,8 @@ int main(int argc, char **argv)
 	
 	jeu.setRedrawFunction(&redraw);
 	jeu.setAnimateFunction(&animate);
-	jeu.bindKeyDown(&onKeyDown);
+	jeu.bindKeyDown(&onKey);
+	jeu.bindKeyUp(&onKey);
 	
 	Allegro::startLoop();
 }
